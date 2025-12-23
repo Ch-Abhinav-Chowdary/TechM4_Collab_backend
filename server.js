@@ -24,7 +24,7 @@ connectDB();
 
 // CORS setup
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: process.env.CLIENT_URL || 'https://tech-m4-collab-frontend-aghx.vercel.app',
   credentials: true,
 }));
 
