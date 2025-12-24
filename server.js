@@ -22,10 +22,35 @@ const server = http.createServer(app);
 // Connect to MongoDB
 connectDB();
 
-// CORS setup
+// CORS setup - Allow multiple origins for production and development
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  'https://tech-m4-collab-frontend-aghx.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:3000',
+].filter(Boolean); // Remove undefined values
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'https://tech-m4-collab-frontend-aghx.vercel.app',
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // In development, allow all origins for easier testing
+    if (process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+    
+    // In production, only allow specific origins
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.warn(`⚠️ CORS blocked origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 }));
 
 // Middleware
