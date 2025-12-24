@@ -3,18 +3,42 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 
-// Register a new user
+// Register a new user (DEPRECATED - Only admin can create employees now)
+// This endpoint is kept for backward compatibility but should not be used
 exports.register = async (req, res) => {
+  return res.status(403).json({ 
+    error: 'Public registration is disabled. Only administrators can create new employees.' 
+  });
+};
+
+// Admin: Create a new employee
+exports.createEmployee = async (req, res) => {
   const { name, email, password, role, memberRole } = req.body;
+  
   if (!name || !email || !password) {
-    return res.status(400).json({ error: 'All fields are required' });
+    return res.status(400).json({ error: 'Name, email, and password are required' });
   }
+
+  if (!role || !['admin', 'member', 'viewer'].includes(role)) {
+    return res.status(400).json({ error: 'Valid role is required (admin, member, or viewer)' });
+  }
+
   try {
     const exists = await User.findOne({ email });
-    if (exists) return res.status(400).json({ error: 'User already exists' });
+    if (exists) {
+      return res.status(400).json({ error: 'User with this email already exists' });
+    }
+
     const hash = await bcrypt.hash(password, 10);
-    const user = await User.create({ name, email, password: hash, role, memberRole });
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const user = await User.create({ 
+      name, 
+      email, 
+      password: hash, 
+      role, 
+      memberRole: memberRole || null 
+    });
+
+    // Return user without password and without token (admin creates, employee logs in)
     const safeUser = {
       id: user._id,
       name: user.name,
@@ -27,13 +51,14 @@ exports.register = async (req, res) => {
       streak: user.streak,
       lastActive: user.lastActive,
     };
+
     res.status(201).json({
-      token,
+      message: 'Employee created successfully',
       user: safeUser,
     });
   } catch (err) {
-    console.error('Register error:', err.message);
-    res.status(500).json({ error: 'Server error during registration' });
+    console.error('Create employee error:', err.message);
+    res.status(500).json({ error: 'Server error while creating employee' });
   }
 };
 

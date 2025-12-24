@@ -4,8 +4,10 @@ const authController = require('../controllers/authController');
 const userController = require('../controllers/userController');
 const { authMiddleware, isAdmin } = require('../middleware/authMiddleware');
 
-// Register
+// Register (DEPRECATED - Public registration disabled)
 router.post('/register', authController.register);
+// Admin: Create new employee
+router.post('/create-employee', authMiddleware, isAdmin, authController.createEmployee);
 // Login
 router.post('/login', authController.login);
 // Get current user
