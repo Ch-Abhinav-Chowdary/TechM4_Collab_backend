@@ -5,7 +5,7 @@ const crypto = require('crypto');
 
 // Register a new user
 exports.register = async (req, res) => {
-  const { name, email, password, role } = req.body;
+  const { name, email, password, role, memberRole } = req.body;
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'All fields are required' });
   }
@@ -13,13 +13,14 @@ exports.register = async (req, res) => {
     const exists = await User.findOne({ email });
     if (exists) return res.status(400).json({ error: 'User already exists' });
     const hash = await bcrypt.hash(password, 10);
-    const user = await User.create({ name, email, password: hash, role });
+    const user = await User.create({ name, email, password: hash, role, memberRole });
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
     const safeUser = {
       id: user._id,
       name: user.name,
       email: user.email,
       role: user.role,
+      memberRole: user.memberRole,
       points: user.points,
       level: user.level,
       badges: user.badges,
@@ -80,6 +81,7 @@ exports.login = async (req, res) => {
       name: user.name,
       email: user.email,
       role: user.role,
+      memberRole: user.memberRole,
       points: user.points,
       level: user.level,
       badges: user.badges,
@@ -110,11 +112,15 @@ exports.getMe = async (req, res) => {
 
 // Update profile
 exports.updateProfile = async (req, res) => {
-  const { name, email } = req.body;
+  const { name, email, memberRole } = req.body;
   try {
+    const updateData = { name, email };
+    if (memberRole !== undefined) {
+      updateData.memberRole = memberRole;
+    }
     const updated = await User.findByIdAndUpdate(
       req.user.id,
-      { name, email },
+      updateData,
       { new: true, runValidators: true }
     ).select('-password');
     if (!updated) return res.status(404).json({ error: 'User not found' });
@@ -132,7 +138,7 @@ exports.getAllUsers = async (req, res) => {
     if (req.query.role) {
       filter.role = req.query.role;
     }
-    const users = await User.find(filter, 'name email role');
+    const users = await User.find(filter, 'name email role memberRole');
     res.json(users);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch users' });
@@ -142,8 +148,8 @@ exports.getAllUsers = async (req, res) => {
 // Admin: update user role
 exports.updateUserRole = async (req, res) => {
   try {
-    const { role } = req.body;
-    if (!['admin', 'member', 'viewer'].includes(role)) {
+    const { role, memberRole } = req.body;
+    if (role && !['admin', 'member', 'viewer'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
     }
 
@@ -153,11 +159,16 @@ exports.updateUserRole = async (req, res) => {
     }
 
     // Prevent an admin from changing another admin's role
-    if (targetUser.role === 'admin' && targetUser._id.toString() !== req.user.id) {
+    if (role && targetUser.role === 'admin' && targetUser._id.toString() !== req.user.id) {
       return res.status(403).json({ error: "Cannot change another admin's role" });
     }
 
-    targetUser.role = role;
+    if (role) {
+      targetUser.role = role;
+    }
+    if (memberRole !== undefined) {
+      targetUser.memberRole = memberRole;
+    }
     await targetUser.save();
     
     res.json({ message: 'Role updated', user: targetUser });

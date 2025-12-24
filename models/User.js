@@ -5,6 +5,11 @@ const UserSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: true },
   role: { type: String, enum: ['admin', 'member', 'viewer'], default: 'member' },
+  memberRole: { 
+    type: String, 
+    trim: true,
+    default: null 
+  },
   points: { type: Number, default: 0 },
   level: { type: Number, default: 1 },
   badges: { type: [String], default: [] },
