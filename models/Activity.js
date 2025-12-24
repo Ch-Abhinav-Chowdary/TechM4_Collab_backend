@@ -13,6 +13,7 @@ const ActivitySchema = new mongoose.Schema({
       'task_created',
       'task_completed',
       'task_assigned',
+      'task_proof_uploaded',
       'file_uploaded',
       'user_levelup',
       'workflow_executed'

@@ -3,6 +3,7 @@ const User = require('../models/User');
 const workflowEngine = require('../services/workflowEngine');
 const Activity = require('../models/Activity');
 const { sendTaskAssignmentEmail, sendTaskCompletionEmail } = require('../services/emailService');
+const upload = require('../middleware/uploadMiddleware');
 
 // Get all tasks
 exports.getAllTasks = async (req, res) => {
@@ -11,7 +12,9 @@ exports.getAllTasks = async (req, res) => {
     if (req.query.assignedTo) {
       filter.assignedTo = req.query.assignedTo;
     }
-    const tasks = await Task.find(filter).populate('assignedTo', 'name email');
+    const tasks = await Task.find(filter)
+      .populate('assignedTo', 'name email')
+      .populate('proofFiles.uploadedBy', 'name email');
     res.json(tasks);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch tasks' });
@@ -186,6 +189,89 @@ exports.getTaskAnalytics = async (req, res) => {
   }
 };
 
+// Upload proof for a task (for assigned members only)
+exports.uploadTaskProof = (req, res) => {
+  const taskId = req.params.id;
+  const userId = req.user.id;
+  
+  // First check if task exists and user has permission
+  Task.findById(taskId)
+    .then(task => {
+      if (!task) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
+      // Check if task has any assigned employees
+      if (!task.assignedTo || task.assignedTo.length === 0) {
+        return res.status(403).json({ 
+          error: 'This task has no assigned employees. Only assigned employees can upload proof.' 
+        });
+      }
+
+      // Check if user is assigned to this task
+      // assignedTo is an array of ObjectIds, so we compare directly
+      const isAssigned = task.assignedTo.some(assigneeId => {
+        // Handle both ObjectId and string comparisons
+        const assigneeIdStr = assigneeId.toString ? assigneeId.toString() : String(assigneeId);
+        const userIdStr = userId.toString ? userId.toString() : String(userId);
+        return assigneeIdStr === userIdStr;
+      });
+
+      // Only assigned employees can upload proof - strict enforcement, no admin exception
+      if (!isAssigned) {
+        return res.status(403).json({ 
+          error: 'You can only upload proof for tasks assigned to you. This task is not assigned to you.' 
+        });
+      }
+
+      // Handle file upload
+      upload(req, res, async (err) => {
+        if (err) {
+          return res.status(400).json({ error: err });
+        }
+
+        if (!req.file) {
+          return res.status(400).json({ error: 'No file uploaded' });
+        }
+
+        try {
+          // Add proof file to task
+          const proofFile = {
+            fileUrl: `uploads/${req.file.filename}`,
+            fileName: req.file.originalname,
+            uploadedBy: req.user.id,
+            uploadedAt: new Date()
+          };
+
+          task.proofFiles = task.proofFiles || [];
+          task.proofFiles.push(proofFile);
+          await task.save();
+
+          // Track activity
+          await trackTaskActivity('task_proof_uploaded', task, req.user, {
+            fileName: req.file.originalname
+          });
+
+          const populated = await Task.findById(taskId)
+            .populate('assignedTo', 'name email')
+            .populate('proofFiles.uploadedBy', 'name email');
+
+          res.json({
+            message: 'Proof uploaded successfully',
+            task: populated
+          });
+        } catch (saveErr) {
+          console.error('Error saving proof:', saveErr);
+          res.status(500).json({ error: 'Failed to save proof file' });
+        }
+      });
+    })
+    .catch(err => {
+      console.error('Proof upload error:', err);
+      res.status(500).json({ error: 'Failed to upload proof' });
+    });
+};
+
 // Add this function to track task activities
 const trackTaskActivity = async (type, task, user, additionalData = {}) => {
   try {
@@ -193,7 +279,8 @@ const trackTaskActivity = async (type, task, user, additionalData = {}) => {
       'task_created': `${user.name} created a new task`,
       'task_completed': `${user.name} completed a task`,
       'task_assigned': `${user.name} assigned a task`,
-      'task_updated': `${user.name} updated a task`
+      'task_updated': `${user.name} updated a task`,
+      'task_proof_uploaded': `${user.name} uploaded proof for a task`
     };
 
     await Activity.create({

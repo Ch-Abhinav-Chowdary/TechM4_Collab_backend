@@ -15,6 +15,9 @@ router.post('/', adminOnly, taskController.createTask);
 // Update a task (requires authentication, admin checks in controller)
 router.put('/:id', authMiddleware, taskController.updateTask);
 
+// Upload proof for a task (requires authentication, assigned members can upload)
+router.post('/:id/proof', authMiddleware, taskController.uploadTaskProof);
+
 // Delete a task (Admin Only)
 router.delete('/:id', adminOnly, taskController.deleteTask);
 

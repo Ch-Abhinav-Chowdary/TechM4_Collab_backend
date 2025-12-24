@@ -8,6 +8,12 @@ const TaskSchema = new mongoose.Schema({
   dueDate: { type: Date },
   dependency: { type: mongoose.Schema.Types.ObjectId, ref: 'Task', default: null },
   files: [{ type: String }],
+  proofFiles: [{
+    fileUrl: { type: String, required: true },
+    fileName: { type: String, required: true },
+    uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    uploadedAt: { type: Date, default: Date.now }
+  }],
 }, { timestamps: true });
 
 module.exports = mongoose.model('Task', TaskSchema);
