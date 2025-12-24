@@ -81,6 +81,40 @@ app.use('/api/files', fileRoutes);
 app.use('/api/activities', activityRoutes);
 app.use('/api/admin', adminRoutes);
 
+// Root route - API status
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Real-Time Collaboration API Server',
+    status: 'running',
+    timestamp: new Date().toISOString(),
+    version: '1.0.0',
+    endpoints: {
+      test: '/api/test',
+      auth: '/api/auth',
+      messages: '/api/messages',
+      tasks: '/api/tasks',
+      files: '/api/files',
+      activities: '/api/activities',
+      workflows: '/api/workflows',
+      admin: '/api/admin',
+      upload: '/api/upload'
+    },
+    socket: {
+      enabled: true,
+      path: '/socket.io'
+    }
+  });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
 // Catch-all route for debugging (404 handler)
 app.use((req, res) => {
   console.log(`❌ 404 - Route not found: ${req.method} ${req.originalUrl}`);
