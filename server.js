@@ -22,6 +22,9 @@ const server = http.createServer(app);
 // Connect to MongoDB
 connectDB();
 
+// Initialize activity cleanup service
+const activityCleanupService = require('./services/activityCleanup');
+
 // CORS setup - Allow multiple origins for production and development
 const allowedOrigins = [
   process.env.CLIENT_URL,
@@ -150,4 +153,10 @@ server.listen(PORT, () => {
   console.log(`📁 File API available at: http://localhost:${PORT}/api/files`);
   console.log(`🧪 Test endpoint: http://localhost:${PORT}/api/test`);
   console.log(`📊 Activity API available at: http://localhost:${PORT}/api/activities`);
+  
+  // Start activity cleanup service after server starts
+  // This ensures database connection is established
+  setTimeout(() => {
+    activityCleanupService.start();
+  }, 5000); // Wait 5 seconds for DB connection to be ready
 });

@@ -79,4 +79,40 @@ router.get('/stats', authMiddleware, async (req, res) => {
   }
 });
 
+// Admin: Manually trigger activity cleanup (for testing/admin use)
+router.post('/cleanup', authMiddleware, async (req, res) => {
+  // Check if user is admin
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only admins can trigger cleanup' });
+  }
+
+  try {
+    const activityCleanupService = require('../services/activityCleanup');
+    const result = await activityCleanupService.cleanupOldActivities();
+    res.json({
+      message: 'Activity cleanup completed',
+      ...result
+    });
+  } catch (err) {
+    console.error('Error triggering cleanup:', err);
+    res.status(500).json({ error: 'Failed to trigger cleanup' });
+  }
+});
+
+// Admin: Get cleanup service status
+router.get('/cleanup/status', authMiddleware, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only admins can view cleanup status' });
+  }
+
+  try {
+    const activityCleanupService = require('../services/activityCleanup');
+    const status = activityCleanupService.getStatus();
+    res.json(status);
+  } catch (err) {
+    console.error('Error getting cleanup status:', err);
+    res.status(500).json({ error: 'Failed to get cleanup status' });
+  }
+});
+
 module.exports = router; 
