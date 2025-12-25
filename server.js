@@ -68,6 +68,78 @@ app.get('/api/test', (req, res) => {
 // Serve static files from the "uploads" directory
 app.use('/uploads', express.static('uploads'));
 
+// Download endpoint for files - forces download instead of opening in browser
+// This route must be defined before the catch-all 404 handler
+// Match /download/:filename where filename can contain any characters
+app.get('/download/:filename', (req, res) => {
+  const path = require('path');
+  const fs = require('fs');
+  
+  // Get filename from route parameter
+  let filename = req.params.filename;
+  
+  if (!filename) {
+    return res.status(400).json({ error: 'Filename is required' });
+  }
+  
+  // Decode the filename in case it's URL encoded
+  const decodedFilename = decodeURIComponent(filename);
+  const filePath = path.join(__dirname, 'uploads', decodedFilename);
+  
+  console.log(`📥 Download request - Original URL: ${req.originalUrl}`);
+  console.log(`📥 Download request - Filename param: ${filename}`);
+  console.log(`📥 Download request - Decoded filename: ${decodedFilename}`);
+  console.log(`📥 Download request - Full file path: ${filePath}`);
+  
+  // Check if file exists
+  if (!fs.existsSync(filePath)) {
+    console.error(`❌ File not found: ${filePath}`);
+    // List files in uploads directory for debugging
+    try {
+      const uploadsDir = path.join(__dirname, 'uploads');
+      if (fs.existsSync(uploadsDir)) {
+        const files = fs.readdirSync(uploadsDir);
+        console.log(`📁 Available files in uploads: ${files.slice(0, 10).join(', ')}${files.length > 10 ? '...' : ''}`);
+      }
+    } catch (err) {
+      console.error('Error reading uploads directory:', err);
+    }
+    return res.status(404).json({ error: 'File not found', requestedFile: decodedFilename });
+  }
+  
+  // Get file stats to determine content type
+  const stats = fs.statSync(filePath);
+  const ext = path.extname(filePath).toLowerCase();
+  
+  // Determine content type based on file extension
+  const contentTypes = {
+    '.pdf': 'application/pdf',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.txt': 'text/plain',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.ppt': 'application/vnd.ms-powerpoint',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  };
+  
+  const contentType = contentTypes[ext] || 'application/octet-stream';
+  const originalName = path.basename(filePath);
+  
+  // Set headers to force download
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(originalName)}"`);
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Length', stats.size);
+  
+  // Send file
+  console.log(`✅ Sending file: ${decodedFilename} (${stats.size} bytes, type: ${contentType})`);
+  res.sendFile(filePath);
+});
+
 // Debug: Log all API requests
 app.use('/api', (req, res, next) => {
   console.log(`📥 API Request: ${req.method} ${req.url}`);
@@ -132,7 +204,8 @@ app.use((req, res) => {
       'POST /api/files',
       'GET /api/files/room/:room',
       'GET /api/activities',
-      'GET /api/activities/stats'
+      'GET /api/activities/stats',
+      'GET /download/* (file download endpoint)'
     ]
   });
 });
