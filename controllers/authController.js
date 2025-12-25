@@ -250,11 +250,25 @@ exports.inviteUserByEmail = async (req, res) => {
 // Leaderboard: top 10 users by points (only members, exclude admins and viewers)
 exports.getLeaderboard = async (req, res) => {
   try {
-    const topUsers = await User.find({ role: 'member' }, 'name email points level badges')
+    const topUsers = await User.find({ role: 'member' }, 'name email points level badges streak lastActive')
       .sort({ points: -1 })
       .limit(10);
-    res.json(topUsers);
+    
+    // Ensure streak data is included (it should already be in the query, but let's make sure)
+    const usersWithStreaks = topUsers.map(user => ({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      points: user.points || 0,
+      level: user.level || 1,
+      badges: user.badges || [],
+      streak: user.streak || 0, // Real streak data from database
+      lastActive: user.lastActive
+    }));
+    
+    res.json(usersWithStreaks);
   } catch (err) {
+    console.error('Error fetching leaderboard:', err);
     res.status(500).json({ error: 'Failed to fetch leaderboard' });
   }
 };

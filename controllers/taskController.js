@@ -410,6 +410,13 @@ exports.uploadTaskProof = (req, res) => {
 
           task.proofFiles = task.proofFiles || [];
           task.proofFiles.push(proofFile);
+          
+          // Automatically change task status to "In Progress" when proof is uploaded
+          if (task.status === 'To Do') {
+            task.status = 'In Progress';
+            console.log(`✅ Task ${task._id} status automatically changed to "In Progress" after proof upload`);
+          }
+          
           await task.save();
 
           // Track activity
