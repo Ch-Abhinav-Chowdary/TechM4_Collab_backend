@@ -100,6 +100,11 @@ exports.login = async (req, res) => {
       }
     }
 
+    // Set user online status on login
+    user.online = true;
+    user.lastActive = new Date();
+    await user.save();
+
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
     const safeUser = {
       id: user._id,
@@ -112,6 +117,7 @@ exports.login = async (req, res) => {
       badges: user.badges,
       streak: user.streak,
       lastActive: user.lastActive,
+      online: user.online,
     };
     res.json({
       token,

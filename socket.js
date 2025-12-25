@@ -2,6 +2,7 @@ const { Server } = require('socket.io');
 const Message = require('./models/Message');
 const File = require('./models/File');
 const Activity = require('./models/Activity');
+const User = require('./models/User');
 
 const onlineUsers = {};
 const typingUsers = {};
@@ -44,8 +45,79 @@ const socketSetup = (server) => {
     },
   });
 
-  io.on('connection', (socket) => {
+  // Track all connected users globally (not just by room)
+  const globalOnlineUsers = new Map(); // socket.id -> user
+
+  // Helper function to emit online users to all admins
+  const emitOnlineUsersToAdmins = async (io, globalOnlineUsersMap) => {
+    try {
+      // Get all online users from database
+      const onlineUsersFromDB = await User.find({ online: true })
+        .select('name email role memberRole _id lastActive')
+        .lean();
+      
+      // Emit to all connected sockets (admins will filter on frontend)
+      io.emit('onlineUsersList', onlineUsersFromDB);
+    } catch (error) {
+      console.error('Error emitting online users to admins:', error);
+    }
+  };
+
+  io.on('connection', async (socket) => {
     console.log('🟢 New user connected:', socket.id);
+
+    // Handle user authentication and set online status
+    socket.on('userConnected', async ({ userId }) => {
+      try {
+        if (userId) {
+          // Update user online status in database
+          await User.findByIdAndUpdate(userId, { 
+            online: true,
+            lastActive: new Date()
+          });
+          
+          // Get user details
+          const user = await User.findById(userId).select('-password');
+          if (user) {
+            socket.userId = userId;
+            socket.user = user;
+            globalOnlineUsers.set(socket.id, user);
+            
+            // Emit to all admins that a user came online
+            io.emit('userStatusChanged', {
+              userId: user._id,
+              online: true,
+              user: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                memberRole: user.memberRole
+              }
+            });
+            
+            // Send current online users to admins
+            await emitOnlineUsersToAdmins(io, globalOnlineUsers);
+          }
+        }
+      } catch (error) {
+        console.error('Error setting user online:', error);
+      }
+    });
+
+    // Admin: Request all online users
+    socket.on('getOnlineUsers', async () => {
+      try {
+        // Get all online users from database
+        const onlineUsersFromDB = await User.find({ online: true })
+          .select('name email role memberRole _id lastActive')
+          .lean();
+        
+        socket.emit('onlineUsersList', onlineUsersFromDB);
+      } catch (error) {
+        console.error('Error fetching online users:', error);
+      }
+    });
 
     socket.on('joinRoom', ({ room, user }) => {
       socket.join(room);
@@ -311,8 +383,41 @@ const socketSetup = (server) => {
       });
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
       console.log('🔴 User disconnected:', socket.id);
+      
+      // Update user online status in database
+      if (socket.userId) {
+        try {
+          await User.findByIdAndUpdate(socket.userId, { 
+            online: false,
+            lastActive: new Date()
+          });
+          
+          const user = globalOnlineUsers.get(socket.id);
+          if (user) {
+            // Emit to all admins that a user went offline
+            io.emit('userStatusChanged', {
+              userId: user._id,
+              online: false,
+              user: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                memberRole: user.memberRole
+              }
+            });
+          }
+          
+          globalOnlineUsers.delete(socket.id);
+          
+          // Send updated online users to admins
+          await emitOnlineUsersToAdmins(io, globalOnlineUsers);
+        } catch (error) {
+          console.error('Error setting user offline:', error);
+        }
+      }
       
       // Remove from online users
       if (socket.room && onlineUsers[socket.room]) {
@@ -343,6 +448,20 @@ const socketSetup = (server) => {
           message: `${socket.user.name} left`,
           data: { room: socket.room }
         });
+      }
+    });
+
+    // Admin: Request all online users
+    socket.on('getOnlineUsers', async () => {
+      try {
+        // Get all online users from database
+        const onlineUsersFromDB = await User.find({ online: true })
+          .select('name email role memberRole _id lastActive')
+          .lean();
+        
+        socket.emit('onlineUsersList', onlineUsersFromDB);
+      } catch (error) {
+        console.error('Error fetching online users:', error);
       }
     });
   });
