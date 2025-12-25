@@ -26,6 +26,7 @@ connectDB();
 const allowedOrigins = [
   process.env.CLIENT_URL,
   'https://tech-m4-collab-frontend-aghx.vercel.app',
+  'https://tech-m4-collab-frontend.vercel.app',
   'http://localhost:5173',
   'http://localhost:3000',
 ].filter(Boolean); // Remove undefined values
