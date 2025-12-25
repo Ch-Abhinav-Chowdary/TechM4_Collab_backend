@@ -170,6 +170,17 @@ exports.deleteTask = async (req, res) => {
 // Get task analytics
 exports.getTaskAnalytics = async (req, res) => {
   try {
+    const now = new Date();
+    const todayStart = new Date(now.setHours(0, 0, 0, 0));
+    const todayEnd = new Date(now.setHours(23, 59, 59, 999));
+    
+    // Reset todayStart for proper calculation
+    const todayStartReset = new Date();
+    todayStartReset.setHours(0, 0, 0, 0);
+    const todayEndReset = new Date();
+    todayEndReset.setHours(23, 59, 59, 999);
+
+    // Basic stats
     const totalTasks = await Task.countDocuments();
     const tasksByStatus = await Task.aggregate([
       { $group: { _id: '$status', count: { $sum: 1 } } }
@@ -179,12 +190,166 @@ exports.getTaskAnalytics = async (req, res) => {
       status: { $ne: 'Done' }
     });
 
+    // Today's stats
+    const tasksCreatedToday = await Task.countDocuments({
+      createdAt: { $gte: todayStartReset, $lte: todayEndReset }
+    });
+
+    // Tasks completed today (status changed to Done today)
+    const tasksCompletedToday = await Task.countDocuments({
+      status: 'Done',
+      updatedAt: { $gte: todayStartReset, $lte: todayEndReset }
+    });
+
+    // Active users (users who have been online in the last 15 minutes or have tasks assigned)
+    const activeUsers = await User.countDocuments({
+      $or: [
+        { online: true },
+        { lastActive: { $gte: new Date(Date.now() - 15 * 60 * 1000) } }
+      ]
+    });
+
+    // Weekly trend data (last 7 days)
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - 7);
+    weekStart.setHours(0, 0, 0, 0);
+
+    // Get tasks created per day for last 7 days
+    const tasksCreatedByDay = await Task.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: weekStart }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: '%Y-%m-%d', date: '$createdAt' }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { _id: 1 }
+      }
+    ]);
+
+    // Get tasks completed per day for last 7 days
+    const tasksCompletedByDay = await Task.aggregate([
+      {
+        $match: {
+          status: 'Done',
+          updatedAt: { $gte: weekStart }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: '%Y-%m-%d', date: '$updatedAt' }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { _id: 1 }
+      }
+    ]);
+
+    // Generate last 7 days array with data
+    const last7Days = [];
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      date.setHours(0, 0, 0, 0);
+      const dateStr = date.toISOString().split('T')[0];
+      
+      const createdData = tasksCreatedByDay.find(d => d._id === dateStr);
+      const completedData = tasksCompletedByDay.find(d => d._id === dateStr);
+      
+      last7Days.push({
+        date: dateStr,
+        dayName: date.toLocaleDateString('en-US', { weekday: 'short' }),
+        created: createdData ? createdData.count : 0,
+        completed: completedData ? completedData.count : 0
+      });
+    }
+
+    // Calculate previous period stats for change percentages
+    const previousWeekStart = new Date(weekStart);
+    previousWeekStart.setDate(previousWeekStart.getDate() - 7);
+    
+    const previousWeekTotalTasks = await Task.countDocuments({
+      createdAt: { $gte: previousWeekStart, $lt: weekStart }
+    });
+    
+    const previousWeekCompleted = await Task.countDocuments({
+      status: 'Done',
+      updatedAt: { $gte: previousWeekStart, $lt: weekStart }
+    });
+
+    const currentWeekTotalTasks = await Task.countDocuments({
+      createdAt: { $gte: weekStart }
+    });
+
+    const currentWeekCompleted = await Task.countDocuments({
+      status: 'Done',
+      updatedAt: { $gte: weekStart }
+    });
+
+    // Calculate percentage changes
+    const totalTasksChange = previousWeekTotalTasks > 0 
+      ? (((currentWeekTotalTasks - previousWeekTotalTasks) / previousWeekTotalTasks) * 100).toFixed(1)
+      : currentWeekTotalTasks > 0 ? '100' : '0';
+
+    const completedChange = previousWeekCompleted > 0
+      ? (((currentWeekCompleted - previousWeekCompleted) / previousWeekCompleted) * 100).toFixed(1)
+      : currentWeekCompleted > 0 ? '100' : '0';
+
+    // Build statusCounts object
+    const statusCounts = tasksByStatus.reduce((acc, curr) => {
+      acc[curr._id] = curr.count;
+      return acc;
+    }, {});
+
+    // In Progress change (compare current vs previous week)
+    const previousWeekInProgress = await Task.countDocuments({
+      status: 'In Progress',
+      updatedAt: { $gte: previousWeekStart, $lt: weekStart }
+    });
+    const currentWeekInProgress = statusCounts['In Progress'] || 0;
+    const inProgressChange = previousWeekInProgress > 0
+      ? (((currentWeekInProgress - previousWeekInProgress) / previousWeekInProgress) * 100).toFixed(1)
+      : currentWeekInProgress > 0 ? '100' : '0';
+
+    // Overdue change
+    const previousWeekOverdue = await Task.countDocuments({
+      dueDate: { $lt: previousWeekStart, $gte: new Date(previousWeekStart.getTime() - 7 * 24 * 60 * 60 * 1000) },
+      status: { $ne: 'Done' }
+    });
+    const overdueChange = previousWeekOverdue > 0
+      ? (((overdueTasks - previousWeekOverdue) / previousWeekOverdue) * 100).toFixed(1)
+      : overdueTasks > 0 ? '100' : '0';
+
     res.json({
       totalTasks,
       tasksByStatus,
       overdueTasks,
+      // Real-time data
+      tasksCreatedToday,
+      tasksCompletedToday,
+      activeUsers,
+      // Weekly trends
+      weeklyTrends: last7Days,
+      // Change percentages
+      changes: {
+        totalTasks: totalTasksChange,
+        completed: completedChange,
+        inProgress: inProgressChange,
+        overdue: overdueChange
+      }
     });
   } catch (err) {
+    console.error('Analytics error:', err);
     res.status(500).json({ error: 'Failed to fetch task analytics' });
   }
 };
